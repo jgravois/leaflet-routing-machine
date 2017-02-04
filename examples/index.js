@@ -9,6 +9,7 @@ var control = L.Routing.control(L.extend(window.lrmConfig, {
 		L.latLng(57.74, 11.94),
 		L.latLng(57.6792, 11.949)
 	],
+	router: L.Routing.esriRouter(),
 	geocoder: L.Control.Geocoder.nominatim(),
 	routeWhileDragging: true,
 	reverseWaypoints: true,

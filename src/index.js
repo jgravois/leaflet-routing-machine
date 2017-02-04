@@ -12,6 +12,7 @@ var L = require('leaflet'),
     ItineraryBuilder = require('./itinerary-builder'),
     Mapbox = require('./mapbox'),
     ErrorControl = require('./error-control');
+    // EsriRouter = require('./esri/router');
 
 L.routing = {
     control: function(options) { return new Control(options); },
@@ -50,7 +51,10 @@ L.routing = {
     },
     autocomplete: function(elem, callback, context, options) {
         return new Autocomplete(elem, callback, context, options);
-    }
+    }// ,
+    // esriRouter: function(options) {
+    //     return new EsriRouter(options);
+    // }
 };
 
 module.exports = L.Routing = {
@@ -65,7 +69,8 @@ module.exports = L.Routing = {
     GeocoderElement: GeocoderElement,
     Localization: Localization,
     Formatter: Formatter,
-    ItineraryBuilder: ItineraryBuilder,
+    ItineraryBuilder: ItineraryBuilder
+    // EsriRouter: EsriRouter
 
     // Legacy; remove these in next major release
     control: L.routing.control,

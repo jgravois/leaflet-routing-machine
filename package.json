@@ -9,7 +9,9 @@
   "scripts": {
     "prepublish": "browserify -t browserify-shim -p browserify-derequire -o dist/leaflet-routing-machine.js src/index.js && uglifyjs dist/leaflet-routing-machine.js >dist/leaflet-routing-machine.min.js",
     "publish": "scripts/publish.sh",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start-watch": "watch \"npm run prepublish\" src",
+    "start": "npm run start-watch & http-server"
   },
   "repository": {
     "type": "git",
@@ -40,7 +42,8 @@
     "corslite": "0.0.7",
     "derequire": "^2.0.6",
     "polyline": "0.2.0",
-    "uglify-js": "^2.7.5"
+    "uglify-js": "^2.7.5",
+    "watch": "^1.0.1"
   },
   "dependencies": {
     "osrm-text-instructions": "^0.1.0"

@@ -146,9 +146,15 @@
 
 			for (i = 0; i < r.instructions.length; i++) {
 				instr = r.instructions[i];
-				text = this._formatter.formatInstruction(instr, i);
-				distance = this._formatter.formatDistance(instr.distance);
-				icon = this._formatter.getIconName(instr, i);
+
+				if (r.properties.isEsri) {
+					text = instr;
+				}
+				else {
+					text = this._formatter.formatInstruction(instr, i);
+					distance = this._formatter.formatDistance(instr.distance);
+					icon = this._formatter.getIconName(instr, i);
+				}
 				step = this._itineraryBuilder.createStep(text, distance, icon, steps);
 
 				this._addRowListeners(step, r.coordinates[instr.index]);

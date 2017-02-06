@@ -1,16 +1,15 @@
 (function() {
 	'use strict';
 
-	var L = require('leaflet'),
-		corslite = require('corslite'),
-		polyline = require('polyline'),
-		osrmTextInstructions = require('osrm-text-instructions');
+	var L = require('leaflet');
+	var corslite = require('corslite');
+	var polyline = require('polyline');
+		// osrmTextInstructions = require('osrm-text-instructions');
 
 	// Ignore camelcase naming for this file, since OSRM's API uses
 	// underscores.
 	/* jshint camelcase: false */
-
-	var Waypoint = require('./waypoint');
+	var Waypoint = require('../waypoint');
 
 	/**
 	 * Works against OSRM's new API in version 5.0; this has
@@ -18,17 +17,20 @@
 	 */
 	module.exports = L.Class.extend({
 		options: {
-			// create your own proxied url to use the esri service without a token
+			// proxied url hits an esri routing service without a token
+
+			// doc says directionsLengthUnits is km by default, but its really miles
+
 			serviceUrl: 'http://utility.arcgis.com/usrsvcs/appservices/rdcfU1A3eVNshs0d/rest/services/World/Route/NAServer/Route_World',
-			profile: 'driving',
-			timeout: 30 * 1000,
-			routingOptions: {
-				alternatives: true,
-				steps: true
-			},
-			polylinePrecision: 5,
-			useHints: true,
-			language: 'en'
+			// profile: 'driving',
+			timeout: 30 * 1000
+			// routingOptions: {
+			// 	alternatives: true,
+			// 	steps: true
+			// },
+			// polylinePrecision: 5,
+			// useHints: true,
+			// language: 'en'
 		},
 
 		initialize: function(options) {
@@ -126,43 +128,74 @@
 			    route;
 
 			context = context || callback;
-			if (response.code !== 'Ok') {
+			// no error message
+			if (response.messages.length > 0) {
 				callback.call(context, {
 					status: response.code
 				});
 				return;
 			}
 
-			actualWaypoints = this._toWaypoints(inputWaypoints, response.waypoints);
+			// actualWaypoints = this._toWaypoints(inputWaypoints, response.waypoints);
 
-			for (i = 0; i < response.routes.length; i++) {
-				route = this._convertRoute(response.routes[i]);
-				route.inputWaypoints = inputWaypoints;
-				route.waypoints = actualWaypoints;
-				route.properties = {isSimplified: !options || !options.geometryOnly || options.simplifyGeometry};
-				alts.push(route);
+			// can the esri service pass back alternate routes? if so, add a loop
+			route = this._convertRoute(response.directions[0]);
+
+			// var route = {};
+			// route.instructions = [];
+			//
+			// for (var i=0; i < response.directions[0].features.length; i++) {
+			// 	route.instructions.push(response.directions[0].features[i].attributes.text)
+			// }
+
+			route.summary = {
+				totalDistance: response.directions[0].summary.totalLength,
+				// seconds
+				totalTime: response.directions[0].summary.totalTime * 60
+			}
+			route.name = 'Lets go for a ride!'
+			response.routes.features[0]
+			route.inputWaypoints = inputWaypoints;
+			route.waypoints = inputWaypoints; // actualWaypoints;
+			// what does this do?
+			route.properties = {isSimplified: !options || !options.geometryOnly || options.simplifyGeometry};
+
+			route.coordinates = [];
+
+			for (var j=0; j < response.routes.features[0].geometry.paths[0].length; j++) {
+				var currentPair = response.routes.features[0].geometry.paths[0][j];
+				route.coordinates.push(L.latLng([currentPair[1], currentPair[0]]));
 			}
 
-			this._saveHintData(response.waypoints, inputWaypoints);
+			route.waypointIndices = [
+				0, (response.routes.features[0].geometry.paths[0].length - 1)
+			]
+
+			alts.push(route);
+
+			this._saveHintData(inputWaypoints, inputWaypoints);
+
+			// each route in array has
+			// a name - done
+			// summary of time and distance - done
+			// instructions object (with turn by turn) - done, but finished text will need parsed differently
+			// waypoints - done (passing input for now)
+			// waypointIndices array - done (first and last only for now)
+			// array of coordinates (whole route)
 
 			callback.call(context, null, alts);
 		},
 
-		_convertRoute: function(responseRoute) {
+		_convertRoute: function(responseRoute, summary) {
 			var result = {
-					name: '',
-					coordinates: [],
-					instructions: [],
-					summary: {
-						totalDistance: responseRoute.distance,
-						totalTime: responseRoute.duration
-					}
+					// coordinates: [],
+					instructions: []
 				},
 				legNames = [],
 				waypointIndices = [],
 				index = 0,
-				legCount = responseRoute.legs.length,
-				hasSteps = responseRoute.legs[0].steps.length > 0,
+				legCount = 1, // responseRoute.features.length,
+				hasSteps = responseRoute.features.length > 0,
 				i,
 				j,
 				leg,
@@ -173,42 +206,60 @@
 				text,
 				stepToText;
 
-			if (this.options.stepToText) {
-				stepToText = this.options.stepToText;
-			} else {
-				var textInstructions = osrmTextInstructions('v5', this.options.language);
-				stepToText = textInstructions.compile.bind(textInstructions);
-			}
-
 			for (i = 0; i < legCount; i++) {
-				leg = responseRoute.legs[i];
-				legNames.push(leg.summary && leg.summary.charAt(0).toUpperCase() + leg.summary.substring(1));
-				for (j = 0; j < leg.steps.length; j++) {
-					step = leg.steps[j];
-					geometry = this._decodePolyline(step.geometry);
-					result.coordinates.push.apply(result.coordinates, geometry);
-					type = this._maneuverToInstructionType(step.maneuver, i === legCount - 1);
-					modifier = this._maneuverToModifier(step.maneuver);
-					text = stepToText(step);
+				leg = responseRoute.features;
+				legNames.push(responseRoute.routeName);
+				// geometry = this._decodePolyline(leg.compressedGeometry);
+				text = responseRoute.routeName;
 
-					if (type) {
-						if ((i == 0 && step.maneuver.type == 'depart') || step.maneuver.type == 'arrive') {
-							waypointIndices.push(index);
-						}
+				// result.instructions.push({
+				// 	text: text
+				// });
+
+				for (j = 1; j < leg.length; j++) {
+					step = leg[j];
+					geometry = this._decodePolyline(step.compressedGeometry);
+					// result.coordinates.push.apply(result.coordinates, geometry);
+					// type = this._maneuverToInstructionType(step.maneuver, i === legCount - 1);
+					// modifier = this._maneuverToModifier(step.maneuver);
+					// text = stepToText(step);
+					text = step.attributes.text;
+
+					// if (j == 0 || j == leg.length - 1) {
+					// 	waypointIndices.push(index);
+					// }
 
 						result.instructions.push({
 							type: type,
-							distance: step.distance,
-							time: step.duration,
-							road: step.name,
-							direction: this._bearingToDirection(step.maneuver.bearing_after),
-							exit: step.maneuver.exit,
-							index: index,
-							mode: step.mode,
-							modifier: modifier,
+							distance: step.attributes.length,
+							time: step.attributes.time,
+							// road: 'placeholder', // step.name,
+							// direction: this._bearingToDirection(step.maneuver.bearing_after),
+							// exit: step.maneuver.exit,
+							// index: index,
+							// mode: step.mode,
+							// modifier: modifier,
 							text: text
 						});
-					}
+
+					// if (type) {
+					// 	if ((i == 0 && step.maneuver.type == 'depart') || step.maneuver.type == 'arrive') {
+					// 		waypointIndices.push(index);
+					// 	}
+					//
+					// 	result.instructions.push({
+					// 		type: type,
+					// 		distance: step.distance,
+					// 		time: step.duration,
+					// 		road: step.name,
+					// 		direction: this._bearingToDirection(step.maneuver.bearing_after),
+					// 		exit: step.maneuver.exit,
+					// 		index: index,
+					// 		mode: step.mode,
+					// 		modifier: modifier,
+					// 		text: text
+					// 	});
+					// }
 
 					index += geometry.length;
 				}
@@ -218,7 +269,7 @@
 			if (!hasSteps) {
 				result.coordinates = this._decodePolyline(responseRoute.geometry);
 			} else {
-				result.waypointIndices = waypointIndices;
+				// result.waypointIndices = waypointIndices;
 			}
 
 			return result;
@@ -325,14 +376,10 @@
 
 			computeInstructions =
 				true;
-
-			return this.options.serviceUrl + '/' + this.options.profile + '/' +
-				locs.join(';') + '?' +
-				(options.geometryOnly ? (options.simplifyGeometry ? '' : 'overview=full') : 'overview=false') +
-				'&alternatives=' + computeAlternative.toString() +
-				'&steps=' + computeInstructions.toString() +
-				(this.options.useHints ? '&hints=' + hints.join(';') : '') +
-				(options.allowUTurns ? '&continue_straight=' + !options.allowUTurns : '');
+				// to do: expose more routing parameters!
+				new Date().getTime()
+				return this.options.serviceUrl + '/solve?f=json&directionsLengthUnits=esriNAUMeters&directionsOutputType=esriDOTComplete&startTimeisUTC=true&startTime=' + new Date().getTime() + '&stops=' +
+					locs.join(';');
 		},
 
 		_locationKey: function(location) {

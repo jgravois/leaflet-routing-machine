@@ -1,10 +1,17 @@
+/*
+to do:
+decode compressed geometry to make individual turn geometries interactive
+make it work with nominatim geocoder
+expose a few routing parameters
+isolate the provider in its own repo
+*/
 (function() {
 	'use strict';
 
 	var L = require('leaflet');
 	var corslite = require('corslite');
 	var polyline = require('polyline');
-		// osrmTextInstructions = require('osrm-text-instructions');
+	// osrmTextInstructions = require('osrm-text-instructions');
 
 	// Ignore camelcase naming for this file, since OSRM's API uses
 	// underscores.
@@ -18,9 +25,7 @@
 	module.exports = L.Class.extend({
 		options: {
 			// proxied url hits an esri routing service without a token
-
 			// doc says directionsLengthUnits is km by default, but its really miles
-
 			serviceUrl: 'http://utility.arcgis.com/usrsvcs/appservices/rdcfU1A3eVNshs0d/rest/services/World/Route/NAServer/Route_World',
 			// profile: 'driving',
 			timeout: 30 * 1000
@@ -141,19 +146,13 @@
 			// can the esri service pass back alternate routes? if so, add a loop
 			route = this._convertRoute(response.directions[0]);
 
-			// var route = {};
-			// route.instructions = [];
-			//
-			// for (var i=0; i < response.directions[0].features.length; i++) {
-			// 	route.instructions.push(response.directions[0].features[i].attributes.text)
-			// }
-
 			route.summary = {
 				totalDistance: response.directions[0].summary.totalLength,
 				// seconds
 				totalTime: response.directions[0].summary.totalTime * 60
 			}
-			route.name = 'Lets go for a ride!'
+
+			route.name = 'Esri routing service!'
 			response.routes.features[0]
 			route.inputWaypoints = inputWaypoints;
 			route.waypoints = inputWaypoints; // actualWaypoints;
@@ -212,16 +211,12 @@
 				// geometry = this._decodePolyline(leg.compressedGeometry);
 				text = responseRoute.routeName;
 
-				// result.instructions.push({
-				// 	text: text
-				// });
-
-				for (j = 1; j < leg.length; j++) {
+				for (j = 0; j < leg.length; j++) {
 					step = leg[j];
 					geometry = this._decodePolyline(step.compressedGeometry);
 					// result.coordinates.push.apply(result.coordinates, geometry);
-					// type = this._maneuverToInstructionType(step.maneuver, i === legCount - 1);
-					// modifier = this._maneuverToModifier(step.maneuver);
+					type = this._esriManeuverToInstructionType(step.attributes, i === legCount - 1);
+					modifier = this._esriManeuverToModifier(step.attributes);
 					// text = stepToText(step);
 					text = step.attributes.text;
 
@@ -238,7 +233,7 @@
 							// exit: step.maneuver.exit,
 							// index: index,
 							// mode: step.mode,
-							// modifier: modifier,
+							modifier: modifier,
 							text: text
 						});
 
@@ -280,43 +275,55 @@
 			return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][oct];
 		},
 
-		_maneuverToInstructionType: function(maneuver, lastLeg) {
-			switch (maneuver.type) {
-			case 'new name':
-				return 'Continue';
-			case 'depart':
+		_esriManeuverToInstructionType: function(attributes, lastLeg) {
+			// case 'esriDMTStraight':
+			// case 'esriDMTTurnLeft':
+			// case 'esriDMTTurnRight':
+			switch (attributes.maneuverType) {
+			case 'esriDMTDepart':
 				return 'Head';
-			case 'arrive':
+			case 'esriDMTStop':
 				return lastLeg ? 'DestinationReached' : 'WaypointReached';
-			case 'roundabout':
+			case 'esriDMTRoundabout':
 			case 'rotary':
 				return 'Roundabout';
-			case 'merge':
-			case 'fork':
-			case 'on ramp':
-			case 'off ramp':
-			case 'end of road':
-				return this._camelCase(maneuver.type);
+			case 'esriDMTForkLeft':
+			case 'esriDMTForkRight':
+			case 'esriDMTRampLeft':
+			case 'esriDMTRampRight':
+			case 'esriDMTSharpLeft':
+			case 'esriDMTSharpRight':
+				return this._camelCase(attributes.maneuverType);
 			// These are all reduced to the same instruction in the current model
 			//case 'turn':
 			//case 'ramp': // deprecated in v5.1
 			default:
-				return this._camelCase(maneuver.modifier);
+				return null // this._camelCase(attributes.modifier);
 			}
 		},
 
-		_maneuverToModifier: function(maneuver) {
-			var modifier = maneuver.modifier;
+		_esriManeuverToModifier: function(attributes) {
+			var modifier ; // = attributes.modifier;
+			// modifier = this._leftOrRight(attributes.maneuverType);
 
-			switch (maneuver.type) {
-			case 'merge':
-			case 'fork':
-			case 'on ramp':
-			case 'off ramp':
-			case 'end of road':
-				modifier = this._leftOrRight(modifier);
+			switch (attributes.maneuverType) {
+			case 'esriDMTDepart':
+			case 'esriDMTStraight':
+			case 'esriDMTRoundabout':
+			case 'esriDMTStop':
+			  modifier = null;
+				break
+			// case 'esriDMTTurnLeft':
+			// case 'esriDMTTurnRight':
+			// case 'esriDMTForkLeft':
+			// case 'esriDMTForkRight':
+			// case 'esriDMTRampLeft':
+			// case 'esriDMTRampRight':
+			// case 'esriDMTSharpLeft':
+			// case 'esriDMTSharpRight':
+			default:
+			  modifier = this._leftOrRight(attributes.maneuverType);
 			}
-
 			return modifier && this._camelCase(modifier);
 		},
 
@@ -331,7 +338,7 @@
 		},
 
 		_leftOrRight: function(d) {
-			return d.indexOf('left') >= 0 ? 'Left' : 'Right';
+			return d.indexOf('Left') >= 0 ? 'Left' : 'Right';
 		},
 
 		_decodePolyline: function(routeGeometry) {
